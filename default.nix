@@ -27,6 +27,8 @@ let
 
   v = pkgs.rust.toRustTarget pkgs.stdenv.buildPlatform;
 
+  v_t = pkgs.rust.toRustTarget pkgs.stdenv.targetPlatform;
+
   combine' = pkgs.callPackage ./lib/combine.nix { };
 
   mkToolchain = pkgs.callPackage ./lib/mk-toolchain.nix { };
@@ -103,15 +105,23 @@ let
       if t ? path then
         throw "fenix doesn't support toolchain.path"
       else
-        let toolchain = fromToolchainName' target t.channel sha256; in
-        combine' "rust-${t.channel}" (attrVals
-          (filter (component: toolchain ? ${component}) (unique
-            (toolchain.manifest.profiles.${t.profile or "default"}
-              ++ t.components or [ ])))
-          toolchain ++ map
-          (target:
-            (fromManifest' target "-${t.channel}" toolchain.manifest).rust-std)
-          (t.targets or [ ]))
+        let
+          toolchain = fromToolchainName' target t.channel sha256;
+
+          profile = toolchain.manifest.profiles.${t.profile or "default"};
+
+          components = filter
+            (component: toolchain ? ${component})
+            (unique (profile ++ t.components or [ ]));
+
+          getRustStd = target:
+            (fromManifest' target "-${t.channel}" toolchain.manifest).rust-std;
+
+          targets = [ v_t ] ++ t.targets or [ ];
+
+        in combine'
+          "rust-${t.channel}"
+          (attrVals components toolchain ++ map getRustStd targets)
     else
       toolchain.defaultToolchain;
 
